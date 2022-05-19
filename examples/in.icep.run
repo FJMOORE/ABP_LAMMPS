@@ -1,0 +1,52 @@
+variable	phi equal 0.6 # Sets number density.
+variable 	L equal 4 #halfbox length
+variable	2L equal 2*$L
+variable	Seed equal 1234
+variable	N equal floor(${phi}*(${2L}^3)) #computes N for desired number density  and box size.
+variable	v_p equal 30 # set active velocity
+variable	T equal 0.2 # temperature
+variable	D equal 1 # translational diffusion coefficient
+variable	dt equal 0.00001
+variable	WCA_cut equal 1.122
+variable 	runtime_Soft equal 100000
+variable	runtime_Eq equal 100000
+variable	runtime_Main equal 100000
+variable	dump_freq equal 1000
+
+units           lj
+dimension       3
+boundary        p p p
+atom_style      hybrid sphere dipole
+region          box block -$L $L -$L $L -$L $L units box
+create_box      1 box
+timestep        ${dt}
+
+#set up equilibration run: add particles randomly to box with soft potential.
+pair_style      soft ${WCA_cut}
+pair_coeff      * * 0.0
+variable        prefactor equal ramp(0,100) # strength of soft potential is increase slowly over time
+create_atoms	1 random ${N} ${Seed} NULL # adding N particles randomly to the entire simulation box
+
+fix             1 all activebd $T $T $D 0.0 ${Seed} #run a passive brownian to remove overlaps
+fix             2 all adapt 1 pair soft a * * v_prefactor
+thermo		10000
+run             ${runtime_Soft}
+unfix           1
+unfix           2
+
+#set up main run: change particle interactions to  WCA.
+pair_style	lj/cut ${WCA_cut} 
+pair_modify	shift yes #shifts LJ to become WCA
+pair_coeff	* * 1 1 ${WCA_cut}  #Cutoff LJ at minima to become WCA
+
+#Equilibrate system
+fix             eq_icep all activebd $T $T $D 0.0 ${Seed} 
+run		${runtime_Eq}
+reset_timestep	0
+unfix		eq_icep
+
+#Main run
+fix             icep all activebd $T $T $D ${v_p} ${Seed} 
+dump            tj all xyz ${dump_freq} icep_${phi}_${v_p}_${Seed}.xyz
+run             ${runtime_Main}
+                                                                                                                                                                                                                
